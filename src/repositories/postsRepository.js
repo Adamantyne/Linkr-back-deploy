@@ -1,23 +1,68 @@
 import db from "../config/db.js";
 
-async function getPosts(hashtag) {
+async function getPosts(hashtag, userId, limit, offset) {
   try {
-    console.log(hashtag);
-    const hashtagsFilter = hashtag
-      ? `WHERE hashtags.name = '${hashtag}' AND posts."updatedAt" IS NULL`
-      : 'WHERE posts."updatedAt" IS NULL';
 
-    return db.query(`
-      SELECT posts.id, posts.url, posts.message, posts.likes, users.username,
-      users.image, posts."userId"
+    if (hashtag){
+      const query = {
+        text: `
+          SELECT posts.id, posts.url, posts.message, posts.likes, users.username,
+          users.image, posts."userId"
+          FROM posts
+          JOIN users ON posts."userId" = users.id
+          LEFT JOIN "postsHashtags" ON  posts.id = "postsHashtags"."postId"
+          LEFT JOIN hashtags ON "postsHashtags"."hashtagId" = hashtags.id
+          WHERE hashtags.name = $1 AND posts."usersId" <> $4
+          GROUP BY posts.id,users.username,users.image
+          ORDER BY posts."createdAt" DESC
+          LIMIT $2
+          OFFSET $3;
+        `,
+        values: [hashtag, limit, offset, userId],
+      };
+  
+      return db.query(query);
+    }
+
+
+    const query = {
+      text: `
+      SELECT 
+          posts.id, 
+          posts.url, 
+          posts.message, 
+          posts.likes, 
+          users.username,
+          users.image, 
+          posts."userId"
       FROM posts
       JOIN users ON posts."userId" = users.id
-      LEFT JOIN "postsHashtags" ON  posts.id = "postsHashtags"."postId"
-      LEFT JOIN hashtags ON "postsHashtags"."hashtagId" = hashtags.id
-      ${hashtagsFilter}
-      GROUP BY posts.id,users.username,users.image
+      LEFT JOIN following ON following."followingId" = posts."userId"
+      WHERE 
+          following."userId" = $3
+      GROUP BY 
+          posts.id,
+          users.username,
+          users.image
       ORDER BY posts."createdAt" DESC
-      LIMIT 20;`);
+      LIMIT $1
+      OFFSET $2;
+        `,
+      values: [limit,offset, userId],
+    };
+    return db.query(query);
+
+  } catch (error) {
+    console.log(error);
+    return error;
+  }
+}
+
+function getContPosts(userId){
+  try {
+    return db.query(`
+     SELECT COUNT(id) FROM posts
+    `);
   } catch (error) {
     console.log(error);
     return error;
@@ -133,23 +178,6 @@ async function getPostByUser(userId) {
     console.log(error);
     return error;
   }
-  /* try {
-    const query = {
-      text: `
-        SELECT 
-          * 
-        FROM 
-          posts 
-        WHERE 
-          "userId" = $1 AND "updatedAt" IS NULL;`,
-      values: [userId],
-    };
-
-    return db.query(query);
-  } catch (error) {
-    console.log(error);
-    return error;
-  } */
 }
 
 async function publishPost(url, message, userId) {
@@ -169,6 +197,39 @@ async function publishPost(url, message, userId) {
   }
 }
 
+async function removePost(id) {
+  try{
+    return db.query(`
+      DELETE FROM posts WHERE id = $1;
+    `, [id]);
+  }catch(error){
+    console.log(error);
+    return error;
+  }
+}
+
+async function removeHastags(id){
+  try{
+    return db.query(`
+      DELETE FROM "postsHashtags" WHERE "postId" = $1;
+    `, [id]);
+  }catch(error){
+    console.log(error);
+    return error;
+  }
+}
+
+async function removeLikes(id){
+  try{
+    return db.query(`
+      DELETE FROM likes WHERE "postId" = $1;
+    `, [id]);
+  }catch(error){
+    console.log(error);
+    return error;
+  }
+}
+
 const postsRepository = {
   getPosts,
   getPostById,
@@ -176,7 +237,11 @@ const postsRepository = {
   getUserByToken,
   getPostByUser,
   publishPost,
-  getPostsIdByUserId
+  getPostsIdByUserId,
+  getContPosts,
+  removePost,
+  removeHastags,
+  removeLikes
 };
 
 export default postsRepository;
